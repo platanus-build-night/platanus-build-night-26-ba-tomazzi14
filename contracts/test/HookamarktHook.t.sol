@@ -94,6 +94,7 @@ contract HookamarktHookTest is Test {
 
     uint256 constant AGENT_197 = 197;
     uint256 constant AGENT_198 = 198;
+    uint256 constant AGENT_199 = 199;
 
     address alice = makeAddr("alice");
 
@@ -495,5 +496,428 @@ contract HookamarktHookTest is Test {
         assertEq(successCount, 3);
         assertEq(failCount, 0);
         assertEq(successRate, 100);
+    }
+
+    // ============ beforeSwap: Agent #199 (Time Optimizer) ============
+
+    function _warpToHourUTC(uint256 hour) internal {
+        // Warp to a base timestamp (2024-01-01 00:00:00 UTC) + desired hour
+        uint256 baseTimestamp = 1704067200; // 2024-01-01 00:00:00 UTC
+        vm.warp(baseTimestamp + (hour * 1 hours));
+    }
+
+    function testAgent199_AllowsSmallSwapDuringNormalHours() public {
+        _warpToHourUTC(10); // 10:00 UTC - normal hours
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-2 ether); // 2 ETH, under 5 ETH limit
+        bytes memory hookData = abi.encode(AGENT_199);
+
+        vm.prank(poolManager);
+        (bytes4 selector, , ) = hook.beforeSwap(alice, key, params, hookData);
+
+        assertEq(selector, hook.beforeSwap.selector);
+        assertEq(hook.agentSwapCount(AGENT_199), 1);
+        assertEq(hook.agentFailCount(AGENT_199), 0);
+    }
+
+    function testAgent199_AllowsExactly5EthDuringNormalHours() public {
+        _warpToHourUTC(10); // 10:00 UTC - normal hours
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-5 ether); // exactly 5 ETH
+        bytes memory hookData = abi.encode(AGENT_199);
+
+        vm.prank(poolManager);
+        (bytes4 selector, , ) = hook.beforeSwap(alice, key, params, hookData);
+
+        assertEq(selector, hook.beforeSwap.selector);
+        assertEq(hook.agentFailCount(AGENT_199), 0);
+    }
+
+    function testAgent199_RejectsLargeSwapDuringNormalHours() public {
+        _warpToHourUTC(10); // 10:00 UTC - normal hours
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-6 ether); // 6 ETH > 5 ETH limit
+        bytes memory hookData = abi.encode(AGENT_199);
+
+        vm.prank(poolManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HookamarktHook.TimeOptimizerRejected.selector,
+                int256(-6 ether),
+                uint256(5 ether),
+                false // not volatile hour
+            )
+        );
+        hook.beforeSwap(alice, key, params, hookData);
+    }
+
+    function testAgent199_AllowsSmallSwapDuringVolatileHours() public {
+        _warpToHourUTC(15); // 15:00 UTC - volatile hours
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.05 ether); // 0.05 ETH, under 0.1 ETH
+        bytes memory hookData = abi.encode(AGENT_199);
+
+        vm.prank(poolManager);
+        (bytes4 selector, , ) = hook.beforeSwap(alice, key, params, hookData);
+
+        assertEq(selector, hook.beforeSwap.selector);
+        assertEq(hook.agentFailCount(AGENT_199), 0);
+    }
+
+    function testAgent199_AllowsExactly01EthDuringVolatileHours() public {
+        _warpToHourUTC(14); // 14:00 UTC - start of volatile hours
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.1 ether); // exactly 0.1 ETH
+        bytes memory hookData = abi.encode(AGENT_199);
+
+        vm.prank(poolManager);
+        (bytes4 selector, , ) = hook.beforeSwap(alice, key, params, hookData);
+
+        assertEq(selector, hook.beforeSwap.selector);
+        assertEq(hook.agentFailCount(AGENT_199), 0);
+    }
+
+    function testAgent199_RejectsModerateSwapDuringVolatileHours() public {
+        _warpToHourUTC(16); // 16:00 UTC - volatile hours
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.5 ether); // 0.5 ETH > 0.1 ETH volatile limit
+        bytes memory hookData = abi.encode(AGENT_199);
+
+        vm.prank(poolManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HookamarktHook.TimeOptimizerRejected.selector,
+                int256(-0.5 ether),
+                uint256(0.1 ether),
+                true // volatile hour
+            )
+        );
+        hook.beforeSwap(alice, key, params, hookData);
+    }
+
+    function testAgent199_VolatileBoundary_14UTC_IsVolatile() public {
+        _warpToHourUTC(14); // 14:00 UTC - start boundary (inclusive)
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.5 ether); // would pass normal, fail volatile
+        bytes memory hookData = abi.encode(AGENT_199);
+
+        vm.prank(poolManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HookamarktHook.TimeOptimizerRejected.selector,
+                int256(-0.5 ether),
+                uint256(0.1 ether),
+                true
+            )
+        );
+        hook.beforeSwap(alice, key, params, hookData);
+    }
+
+    function testAgent199_VolatileBoundary_18UTC_IsNormal() public {
+        _warpToHourUTC(18); // 18:00 UTC - end boundary (exclusive, so normal hours)
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.5 ether); // 0.5 ETH, under 5 ETH
+        bytes memory hookData = abi.encode(AGENT_199);
+
+        vm.prank(poolManager);
+        (bytes4 selector, , ) = hook.beforeSwap(alice, key, params, hookData);
+
+        assertEq(selector, hook.beforeSwap.selector);
+        assertEq(hook.agentFailCount(AGENT_199), 0);
+    }
+
+    function testAgent199_VolatileBoundary_13UTC_IsNormal() public {
+        _warpToHourUTC(13); // 13:00 UTC - just before volatile
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-4 ether); // would fail volatile, passes normal
+        bytes memory hookData = abi.encode(AGENT_199);
+
+        vm.prank(poolManager);
+        (bytes4 selector, , ) = hook.beforeSwap(alice, key, params, hookData);
+
+        assertEq(selector, hook.beforeSwap.selector);
+        assertEq(hook.agentFailCount(AGENT_199), 0);
+    }
+
+    function testAgent199_VolatileBoundary_17_59UTC_IsVolatile() public {
+        // 17:59 UTC - last minute of volatile window
+        uint256 baseTimestamp = 1704067200;
+        vm.warp(baseTimestamp + (17 * 1 hours) + (59 * 1 minutes));
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.5 ether); // would pass normal, fail volatile
+        bytes memory hookData = abi.encode(AGENT_199);
+
+        vm.prank(poolManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HookamarktHook.TimeOptimizerRejected.selector,
+                int256(-0.5 ether),
+                uint256(0.1 ether),
+                true
+            )
+        );
+        hook.beforeSwap(alice, key, params, hookData);
+    }
+
+    function testAgent199_ExactOutPositiveAmount() public {
+        _warpToHourUTC(15); // volatile
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(0.5 ether); // exactOut, positive, > 0.1 ETH
+        bytes memory hookData = abi.encode(AGENT_199);
+
+        vm.prank(poolManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HookamarktHook.TimeOptimizerRejected.selector,
+                int256(0.5 ether),
+                uint256(0.1 ether),
+                true
+            )
+        );
+        hook.beforeSwap(alice, key, params, hookData);
+    }
+
+    function testAgent199_ZeroAmount() public {
+        _warpToHourUTC(15); // volatile, strictest limit
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(0);
+        bytes memory hookData = abi.encode(AGENT_199);
+
+        vm.prank(poolManager);
+        hook.beforeSwap(alice, key, params, hookData);
+
+        assertEq(hook.agentFailCount(AGENT_199), 0);
+    }
+
+    function testAgent199_AfterSwapUpdatesReputation() public {
+        _warpToHourUTC(10); // normal hours
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-1 ether);
+        BalanceDelta delta = BalanceDelta.wrap(0);
+        bytes memory hookData = abi.encode(AGENT_199);
+
+        vm.startPrank(poolManager);
+        hook.beforeSwap(alice, key, params, hookData);
+        hook.afterSwap(alice, key, params, delta, hookData);
+        vm.stopPrank();
+
+        assertEq(hook.agentSuccessCount(AGENT_199), 1);
+        assertEq(reputationRegistry.getFeedbackCallCount(), 1);
+
+        MockReputationRegistry.FeedbackCall memory fb = reputationRegistry.getLastFeedback();
+        assertEq(fb.agentId, AGENT_199);
+        assertEq(fb.score, 5);
+    }
+
+    // ============ Edge Cases ============
+
+    function testAgent197_ExactLimitPlusOneWei_Reverts() public {
+        PoolKey memory key = _buildPoolKey();
+        // 1 ETH + 1 wei → should revert
+        SwapParams memory params = _buildSwapParams(-(int256(1 ether + 1)));
+        bytes memory hookData = abi.encode(AGENT_197);
+
+        vm.prank(poolManager);
+        vm.expectRevert();
+        hook.beforeSwap(alice, key, params, hookData);
+    }
+
+    function testAgent199_VolatileExactLimitPlusOneWei_Reverts() public {
+        _warpToHourUTC(15); // volatile
+
+        PoolKey memory key = _buildPoolKey();
+        // 0.1 ETH + 1 wei → should revert during volatile
+        SwapParams memory params = _buildSwapParams(-(int256(0.1 ether + 1)));
+        bytes memory hookData = abi.encode(AGENT_199);
+
+        vm.prank(poolManager);
+        vm.expectRevert();
+        hook.beforeSwap(alice, key, params, hookData);
+    }
+
+    function testAgent199_NormalExactLimitPlusOneWei_Reverts() public {
+        _warpToHourUTC(10); // normal
+
+        PoolKey memory key = _buildPoolKey();
+        // 5 ETH + 1 wei → should revert during normal
+        SwapParams memory params = _buildSwapParams(-(int256(5 ether + 1)));
+        bytes memory hookData = abi.encode(AGENT_199);
+
+        vm.prank(poolManager);
+        vm.expectRevert();
+        hook.beforeSwap(alice, key, params, hookData);
+    }
+
+    function testMultipleSwaps_SameAgent_StatsAccumulate() public {
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.5 ether);
+        BalanceDelta delta = BalanceDelta.wrap(0);
+        bytes memory hookData = abi.encode(AGENT_197);
+
+        vm.startPrank(poolManager);
+        for (uint256 i = 0; i < 5; i++) {
+            hook.beforeSwap(alice, key, params, hookData);
+            hook.afterSwap(alice, key, params, delta, hookData);
+        }
+        vm.stopPrank();
+
+        (uint256 totalSwaps, uint256 successCount, uint256 failCount, uint256 successRate) =
+            hook.getAgentStats(AGENT_197);
+
+        assertEq(totalSwaps, 5);
+        assertEq(successCount, 5);
+        assertEq(failCount, 0);
+        assertEq(successRate, 100);
+        assertEq(reputationRegistry.getFeedbackCallCount(), 5);
+    }
+
+    function testReputation_ExactParameters() public {
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.5 ether);
+        BalanceDelta delta = BalanceDelta.wrap(0);
+        bytes memory hookData = abi.encode(AGENT_198);
+
+        vm.startPrank(poolManager);
+        hook.beforeSwap(alice, key, params, hookData);
+        hook.afterSwap(alice, key, params, delta, hookData);
+        vm.stopPrank();
+
+        MockReputationRegistry.FeedbackCall memory fb = reputationRegistry.getLastFeedback();
+        assertEq(fb.agentId, AGENT_198);
+        assertEq(fb.score, 5);
+        assertEq(fb.tag1, bytes32("swap_success"));
+        assertEq(fb.tag2, bytes32("hookamarkt"));
+    }
+
+    // ============ Integration Tests ============
+
+    function testFullFlow_Agent197() public {
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.5 ether);
+        BalanceDelta delta = BalanceDelta.wrap(0);
+        bytes memory hookData = abi.encode(AGENT_197);
+
+        vm.startPrank(poolManager);
+
+        // 1. beforeSwap emits AgentSwapAttempted
+        vm.expectEmit(true, false, false, true);
+        emit HookamarktHook.AgentSwapAttempted(AGENT_197, alice);
+        hook.beforeSwap(alice, key, params, hookData);
+
+        // 2. afterSwap emits AgentSwapSuccess
+        vm.expectEmit(true, false, false, true);
+        emit HookamarktHook.AgentSwapSuccess(AGENT_197, alice);
+        hook.afterSwap(alice, key, params, delta, hookData);
+
+        vm.stopPrank();
+
+        // 3. Stats updated
+        (uint256 totalSwaps, uint256 successCount, uint256 failCount, uint256 successRate) =
+            hook.getAgentStats(AGENT_197);
+        assertEq(totalSwaps, 1);
+        assertEq(successCount, 1);
+        assertEq(failCount, 0);
+        assertEq(successRate, 100);
+
+        // 4. Reputation called
+        assertEq(reputationRegistry.getFeedbackCallCount(), 1);
+    }
+
+    function testFullFlow_Agent198() public {
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.5 ether);
+        BalanceDelta delta = BalanceDelta.wrap(0);
+        bytes memory hookData = abi.encode(AGENT_198);
+
+        vm.startPrank(poolManager);
+        hook.beforeSwap(alice, key, params, hookData);
+        hook.afterSwap(alice, key, params, delta, hookData);
+        vm.stopPrank();
+
+        (uint256 totalSwaps, uint256 successCount,, uint256 successRate) =
+            hook.getAgentStats(AGENT_198);
+        assertEq(totalSwaps, 1);
+        assertEq(successCount, 1);
+        assertEq(successRate, 100);
+        assertEq(reputationRegistry.getFeedbackCallCount(), 1);
+    }
+
+    function testFullFlow_Agent199() public {
+        _warpToHourUTC(10); // normal hours
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-3 ether);
+        BalanceDelta delta = BalanceDelta.wrap(0);
+        bytes memory hookData = abi.encode(AGENT_199);
+
+        vm.startPrank(poolManager);
+        hook.beforeSwap(alice, key, params, hookData);
+        hook.afterSwap(alice, key, params, delta, hookData);
+        vm.stopPrank();
+
+        (uint256 totalSwaps, uint256 successCount,, uint256 successRate) =
+            hook.getAgentStats(AGENT_199);
+        assertEq(totalSwaps, 1);
+        assertEq(successCount, 1);
+        assertEq(successRate, 100);
+        assertEq(reputationRegistry.getFeedbackCallCount(), 1);
+    }
+
+    function testMixedAgents_IndependentStats() public {
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.05 ether);
+        BalanceDelta delta = BalanceDelta.wrap(0);
+
+        _warpToHourUTC(10); // normal hours so all agents pass
+        priceFeed.setUpdatedAt(block.timestamp); // refresh oracle after warp
+
+        vm.startPrank(poolManager);
+
+        // Swap with Agent #197
+        hook.beforeSwap(alice, key, params, abi.encode(AGENT_197));
+        hook.afterSwap(alice, key, params, delta, abi.encode(AGENT_197));
+
+        // Swap with Agent #198
+        hook.beforeSwap(alice, key, params, abi.encode(AGENT_198));
+        hook.afterSwap(alice, key, params, delta, abi.encode(AGENT_198));
+
+        // Swap with Agent #199
+        hook.beforeSwap(alice, key, params, abi.encode(AGENT_199));
+        hook.afterSwap(alice, key, params, delta, abi.encode(AGENT_199));
+
+        // Another swap with Agent #197
+        hook.beforeSwap(alice, key, params, abi.encode(AGENT_197));
+        hook.afterSwap(alice, key, params, delta, abi.encode(AGENT_197));
+
+        vm.stopPrank();
+
+        // Verify independent stats
+        (uint256 total197, uint256 success197,,) = hook.getAgentStats(AGENT_197);
+        assertEq(total197, 2);
+        assertEq(success197, 2);
+
+        (uint256 total198, uint256 success198,,) = hook.getAgentStats(AGENT_198);
+        assertEq(total198, 1);
+        assertEq(success198, 1);
+
+        (uint256 total199, uint256 success199,,) = hook.getAgentStats(AGENT_199);
+        assertEq(total199, 1);
+        assertEq(success199, 1);
+
+        // Total reputation calls = 4
+        assertEq(reputationRegistry.getFeedbackCallCount(), 4);
     }
 }

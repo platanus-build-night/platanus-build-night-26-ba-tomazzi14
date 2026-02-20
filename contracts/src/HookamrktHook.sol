@@ -32,7 +32,12 @@ contract HookamarktHook is BaseHook {
 
     uint256 public constant AGENT_SLIPPAGE_GUARDIAN = 197;
     uint256 public constant AGENT_ORACLE_CHECKER = 198;
+    uint256 public constant AGENT_TIME_OPTIMIZER = 199;
     uint256 public constant MAX_SWAP_AMOUNT = 1 ether;
+    uint256 public constant NORMAL_MAX_AMOUNT = 5 ether;
+    uint256 public constant VOLATILE_MAX_AMOUNT = 0.1 ether;
+    uint256 public constant VOLATILE_HOUR_START = 14; // 14:00 UTC
+    uint256 public constant VOLATILE_HOUR_END = 18;   // 18:00 UTC
 
     // ============ Immutables ============
 
@@ -56,6 +61,7 @@ contract HookamarktHook is BaseHook {
     error UnknownAgent(uint256 agentId);
     error SlippageGuardianRejected(int256 amount, uint256 maxAmount);
     error OracleCheckerFailed(string reason);
+    error TimeOptimizerRejected(int256 amount, uint256 maxAmount, bool isVolatileHour);
 
     // ============ Constructor ============
 
@@ -112,6 +118,8 @@ contract HookamarktHook is BaseHook {
             _executeSlippageGuardian(sender, params, agentId);
         } else if (agentId == AGENT_ORACLE_CHECKER) {
             _executeOracleChecker(sender, agentId);
+        } else if (agentId == AGENT_TIME_OPTIMIZER) {
+            _executeTimeOptimizer(sender, params, agentId);
         } else {
             revert UnknownAgent(agentId);
         }
@@ -200,6 +208,32 @@ contract HookamarktHook is BaseHook {
             agentFailCount[agentId]++;
             emit AgentSwapRejected(agentId, sender, "Oracle call failed");
             revert OracleCheckerFailed("Oracle call failed");
+        }
+    }
+
+    /// @notice Agent #199: Time Optimizer - Adjusts limits based on time of day
+    /// @dev During volatile hours (14:00-18:00 UTC): max 0.1 ETH
+    ///      During normal hours: max 5 ETH
+    function _executeTimeOptimizer(
+        address sender,
+        SwapParams calldata params,
+        uint256 agentId
+    ) internal {
+        int256 absAmount = params.amountSpecified < 0
+            ? -params.amountSpecified
+            : params.amountSpecified;
+
+        uint256 hourUTC = (block.timestamp % 1 days) / 1 hours;
+        bool isVolatile = hourUTC >= VOLATILE_HOUR_START && hourUTC < VOLATILE_HOUR_END;
+        uint256 currentMax = isVolatile ? VOLATILE_MAX_AMOUNT : NORMAL_MAX_AMOUNT;
+
+        if (uint256(absAmount) > currentMax) {
+            agentFailCount[agentId]++;
+            string memory reason = isVolatile
+                ? "Swap exceeds 0.1 ETH volatile hour limit"
+                : "Swap exceeds 5 ETH normal hour limit";
+            emit AgentSwapRejected(agentId, sender, reason);
+            revert TimeOptimizerRejected(params.amountSpecified, currentMax, isVolatile);
         }
     }
 

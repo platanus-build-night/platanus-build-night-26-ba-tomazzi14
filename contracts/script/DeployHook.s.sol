@@ -3,7 +3,7 @@ pragma solidity 0.8.26;
 
 import "forge-std/Script.sol";
 import {HookamarktHook} from "../src/HookamrktHook.sol";
-import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 contract DeployHook is Script {
     address constant POOL_MANAGER = 0xE03A1074c86CFeDd5C142C4F04F1a1536e203543;
