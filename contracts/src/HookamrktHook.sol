@@ -22,6 +22,13 @@ interface IReputationRegistry {
         bytes32 fileHash,
         bytes calldata feedbackAuth
     ) external;
+
+    function getSummary(
+        uint256 agentId,
+        address[] calldata clientAddresses,
+        bytes32 tag1,
+        bytes32 tag2
+    ) external view returns (uint64 count, uint8 averageScore);
 }
 
 // ============ Contract ============
@@ -38,6 +45,7 @@ contract HookamarktHook is BaseHook {
     uint256 public constant VOLATILE_MAX_AMOUNT = 0.1 ether;
     uint256 public constant VOLATILE_HOUR_START = 14; // 14:00 UTC
     uint256 public constant VOLATILE_HOUR_END = 18;   // 18:00 UTC
+    uint8 public constant MIN_REPUTATION_SCORE = 3;   // Minimum score (out of 5) to trade
 
     // ============ Immutables ============
 
@@ -62,6 +70,7 @@ contract HookamarktHook is BaseHook {
     error SlippageGuardianRejected(int256 amount, uint256 maxAmount);
     error OracleCheckerFailed(string reason);
     error TimeOptimizerRejected(int256 amount, uint256 maxAmount, bool isVolatileHour);
+    error AgentReputationTooLow(uint256 agentId, uint64 feedbackCount, uint8 averageScore);
 
     // ============ Constructor ============
 
@@ -113,6 +122,9 @@ contract HookamarktHook is BaseHook {
         emit AgentSwapAttempted(agentId, sender);
         agentSwapCount[agentId]++;
 
+        // Check agent reputation before executing strategy
+        _checkReputation(agentId, sender);
+
         // Execute agent strategy
         if (agentId == AGENT_SLIPPAGE_GUARDIAN) {
             _executeSlippageGuardian(sender, params, agentId);
@@ -157,6 +169,28 @@ contract HookamarktHook is BaseHook {
         }
 
         return (this.afterSwap.selector, 0);
+    }
+
+    // ============ Reputation Check ============
+
+    /// @notice Verifies agent has sufficient on-chain reputation (ERC-8004)
+    /// @dev Requires at least 1 feedback AND averageScore >= MIN_REPUTATION_SCORE
+    function _checkReputation(uint256 agentId, address) internal view {
+        address[] memory emptyFilter = new address[](0);
+
+        try reputationRegistry.getSummary(
+            agentId,
+            emptyFilter,
+            bytes32(0),
+            bytes32(0)
+        ) returns (uint64 feedbackCount, uint8 averageScore) {
+            if (feedbackCount == 0 || averageScore < MIN_REPUTATION_SCORE) {
+                revert AgentReputationTooLow(agentId, feedbackCount, averageScore);
+            }
+        } catch {
+            // If reputation registry is unreachable, reject the swap for safety
+            revert AgentReputationTooLow(agentId, 0, 0);
+        }
     }
 
     // ============ Agent Strategies ============

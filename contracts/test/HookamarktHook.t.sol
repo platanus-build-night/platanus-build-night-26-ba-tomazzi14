@@ -24,6 +24,11 @@ contract MockReputationRegistry {
 
     FeedbackCall[] public feedbackCalls;
     bool public shouldRevert;
+    bool public getSummaryShouldRevert;
+
+    // Reputation data per agent
+    mapping(uint256 => uint64) public mockFeedbackCount;
+    mapping(uint256 => uint8) public mockAverageScore;
 
     function giveFeedback(
         uint256 agentId,
@@ -38,8 +43,29 @@ contract MockReputationRegistry {
         feedbackCalls.push(FeedbackCall(agentId, score, tag1, tag2));
     }
 
+    function getSummary(
+        uint256 agentId,
+        address[] calldata,
+        bytes32,
+        bytes32
+    ) external view returns (uint64 count, uint8 averageScore) {
+        if (getSummaryShouldRevert) revert("MockReputationRegistry: getSummary revert");
+        return (mockFeedbackCount[agentId], mockAverageScore[agentId]);
+    }
+
+    // ---- Test helpers ----
+
+    function setAgentReputation(uint256 agentId, uint64 count, uint8 avgScore) external {
+        mockFeedbackCount[agentId] = count;
+        mockAverageScore[agentId] = avgScore;
+    }
+
     function setShouldRevert(bool _shouldRevert) external {
         shouldRevert = _shouldRevert;
+    }
+
+    function setGetSummaryShouldRevert(bool _shouldRevert) external {
+        getSummaryShouldRevert = _shouldRevert;
     }
 
     function getFeedbackCallCount() external view returns (uint256) {
@@ -95,6 +121,7 @@ contract HookamarktHookTest is Test {
     uint256 constant AGENT_197 = 197;
     uint256 constant AGENT_198 = 198;
     uint256 constant AGENT_199 = 199;
+    uint256 constant AGENT_200 = 200;
 
     address alice = makeAddr("alice");
 
@@ -117,6 +144,11 @@ contract HookamarktHookTest is Test {
         );
         deployCodeTo("HookamrktHook.sol:HookamarktHook", constructorArgs, hookAddress);
         hook = HookamarktHook(hookAddress);
+
+        // Set good reputation for known agents (so existing tests pass)
+        reputationRegistry.setAgentReputation(AGENT_197, 1, 5); // 1 feedback, score 5
+        reputationRegistry.setAgentReputation(AGENT_198, 1, 5); // 1 feedback, score 5
+        reputationRegistry.setAgentReputation(AGENT_199, 1, 4); // 1 feedback, score 4
     }
 
     // ============ Helper ============
@@ -340,6 +372,27 @@ contract HookamarktHookTest is Test {
     }
 
     function testBeforeSwap_UnknownAgent_Reverts() public {
+        // Agent 999 has no reputation → rejected by reputation check first
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.5 ether);
+        bytes memory hookData = abi.encode(uint256(999));
+
+        vm.prank(poolManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HookamarktHook.AgentReputationTooLow.selector,
+                uint256(999),
+                uint64(0),
+                uint8(0)
+            )
+        );
+        hook.beforeSwap(alice, key, params, hookData);
+    }
+
+    function testBeforeSwap_UnknownAgentWithReputation_Reverts() public {
+        // Agent 999 has good reputation but is not a known strategy
+        reputationRegistry.setAgentReputation(999, 5, 5);
+
         PoolKey memory key = _buildPoolKey();
         SwapParams memory params = _buildSwapParams(-0.5 ether);
         bytes memory hookData = abi.encode(uint256(999));
@@ -919,5 +972,132 @@ contract HookamarktHookTest is Test {
 
         // Total reputation calls = 4
         assertEq(reputationRegistry.getFeedbackCallCount(), 4);
+    }
+
+    // ============ Reputation Gate Tests ============
+
+    function testReputation_LowScoreAgent_Rejected() public {
+        // Agent #200 has low reputation (score 1/5)
+        reputationRegistry.setAgentReputation(AGENT_200, 1, 1);
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.5 ether);
+        bytes memory hookData = abi.encode(AGENT_200);
+
+        vm.prank(poolManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HookamarktHook.AgentReputationTooLow.selector,
+                AGENT_200,
+                uint64(1),
+                uint8(1)
+            )
+        );
+        hook.beforeSwap(alice, key, params, hookData);
+    }
+
+    function testReputation_NoFeedback_Rejected() public {
+        // Agent #200 has zero feedback
+        reputationRegistry.setAgentReputation(AGENT_200, 0, 0);
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.5 ether);
+        bytes memory hookData = abi.encode(AGENT_200);
+
+        vm.prank(poolManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HookamarktHook.AgentReputationTooLow.selector,
+                AGENT_200,
+                uint64(0),
+                uint8(0)
+            )
+        );
+        hook.beforeSwap(alice, key, params, hookData);
+    }
+
+    function testReputation_GoodAgent_Accepted() public {
+        // Agent #197 has good reputation (set in setUp)
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.5 ether);
+        bytes memory hookData = abi.encode(AGENT_197);
+
+        vm.prank(poolManager);
+        (bytes4 selector, , ) = hook.beforeSwap(alice, key, params, hookData);
+
+        assertEq(selector, hook.beforeSwap.selector);
+    }
+
+    function testReputation_ExactThreshold_Score3_Accepted() public {
+        // Score exactly at threshold (3/5) → should pass
+        reputationRegistry.setAgentReputation(AGENT_200, 5, 3);
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.5 ether);
+        // Agent 200 is not in the known agents list, so it will revert with UnknownAgent
+        // after passing reputation. That's the expected behavior.
+        bytes memory hookData = abi.encode(AGENT_200);
+
+        vm.prank(poolManager);
+        // Should pass reputation but fail on UnknownAgent
+        vm.expectRevert(abi.encodeWithSelector(HookamarktHook.UnknownAgent.selector, AGENT_200));
+        hook.beforeSwap(alice, key, params, hookData);
+    }
+
+    function testReputation_BelowThreshold_Score2_Rejected() public {
+        // Score below threshold (2/5) → should reject
+        reputationRegistry.setAgentReputation(AGENT_200, 5, 2);
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.5 ether);
+        bytes memory hookData = abi.encode(AGENT_200);
+
+        vm.prank(poolManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HookamarktHook.AgentReputationTooLow.selector,
+                AGENT_200,
+                uint64(5),
+                uint8(2)
+            )
+        );
+        hook.beforeSwap(alice, key, params, hookData);
+    }
+
+    function testReputation_RegistryUnreachable_Rejected() public {
+        // If getSummary reverts, reject for safety
+        reputationRegistry.setGetSummaryShouldRevert(true);
+
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.5 ether);
+        bytes memory hookData = abi.encode(AGENT_197);
+
+        vm.prank(poolManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HookamarktHook.AgentReputationTooLow.selector,
+                AGENT_197,
+                uint64(0),
+                uint8(0)
+            )
+        );
+        hook.beforeSwap(alice, key, params, hookData);
+    }
+
+    function testReputation_HighScore_PassesThenStrategy() public {
+        // Agent with score 5/5 should pass reputation AND strategy checks
+        PoolKey memory key = _buildPoolKey();
+        SwapParams memory params = _buildSwapParams(-0.5 ether);
+        BalanceDelta delta = BalanceDelta.wrap(0);
+        bytes memory hookData = abi.encode(AGENT_197);
+
+        vm.startPrank(poolManager);
+        hook.beforeSwap(alice, key, params, hookData);
+        hook.afterSwap(alice, key, params, delta, hookData);
+        vm.stopPrank();
+
+        (uint256 totalSwaps, uint256 successCount,,) = hook.getAgentStats(AGENT_197);
+        assertEq(totalSwaps, 1);
+        assertEq(successCount, 1);
     }
 }
