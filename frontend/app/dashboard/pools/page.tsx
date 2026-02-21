@@ -1,5 +1,6 @@
 import { DashboardHeader } from "@/components/dashboard-header"
 import { PoolCard } from "@/components/pool-card"
+import { LiquidityCard } from "@/components/liquidity-card"
 
 export default function PoolsPage() {
   return (
@@ -17,8 +18,11 @@ export default function PoolsPage() {
           </p>
         </div>
 
-        {/* Pool card */}
-        <PoolCard />
+        {/* Cards */}
+        <div className="space-y-8">
+          <PoolCard />
+          <LiquidityCard />
+        </div>
       </main>
     </div>
   )
