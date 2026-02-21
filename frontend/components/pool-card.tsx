@@ -7,12 +7,15 @@ import {
   Clock,
   Copy,
   ExternalLink,
-  ArrowRight,
-  Plus,
   Check,
+  Loader2,
 } from "lucide-react"
+import { useReadContract } from "wagmi"
+import { HOOK_ADDRESS, HOOKAMARKT_ABI } from "@/lib/contracts"
+import { useAgentStats } from "@/hooks/use-agent-stats"
 
-const HOOK_ADDRESS = "0xBc01DAF0b890ED562Dc325C9ee9429146eEB80C0"
+const IDENTITY_REGISTRY = "0x7177a6867296406881E20d6647232314736Dd09A"
+const REPUTATION_REGISTRY = "0xB5048e3ef1DA4E04deB6f7d0423D06F63869e322"
 
 const compatibleAgents = [
   {
@@ -22,6 +25,7 @@ const compatibleAgents = [
     accentColor: "text-violet-400",
     accentBg: "bg-violet-500/10",
     accentBorder: "border-violet-500/20",
+    reputation: 5,
   },
   {
     id: 198,
@@ -30,6 +34,7 @@ const compatibleAgents = [
     accentColor: "text-cyan-400",
     accentBg: "bg-cyan-500/10",
     accentBorder: "border-cyan-500/20",
+    reputation: 5,
   },
   {
     id: 199,
@@ -38,19 +43,43 @@ const compatibleAgents = [
     accentColor: "text-emerald-400",
     accentBg: "bg-emerald-500/10",
     accentBorder: "border-emerald-500/20",
+    reputation: 4,
   },
-]
-
-const poolStats = [
-  { label: "Total Value Locked", value: "$2.4M" },
-  { label: "24h Volume", value: "$127K" },
-  { label: "Fee Tier", value: "0.3%" },
-  { label: "Your Liquidity", value: "$0" },
 ]
 
 export function PoolCard() {
   const ref = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
+
+  // Read contract config
+  const { data: poolManager } = useReadContract({
+    address: HOOK_ADDRESS,
+    abi: HOOKAMARKT_ABI,
+    functionName: "poolManager",
+  })
+  const { data: priceFeed } = useReadContract({
+    address: HOOK_ADDRESS,
+    abi: HOOKAMARKT_ABI,
+    functionName: "priceFeed",
+  })
+  const { data: reputationReg } = useReadContract({
+    address: HOOK_ADDRESS,
+    abi: HOOKAMARKT_ABI,
+    functionName: "reputationRegistry",
+  })
+  const { data: minRepScore } = useReadContract({
+    address: HOOK_ADDRESS,
+    abi: HOOKAMARKT_ABI,
+    functionName: "MIN_REPUTATION_SCORE",
+  })
+  // Agent stats
+  const { stats: stats197, isLoading: loading197 } = useAgentStats(197)
+  const { stats: stats198, isLoading: loading198 } = useAgentStats(198)
+  const { stats: stats199, isLoading: loading199 } = useAgentStats(199)
+  const isLoadingStats = loading197 || loading198 || loading199
+
+  const totalSwapsAll = (stats197?.totalSwaps ?? 0) + (stats198?.totalSwaps ?? 0) + (stats199?.totalSwaps ?? 0)
+  const totalSuccess = (stats197?.successCount ?? 0) + (stats198?.successCount ?? 0) + (stats199?.successCount ?? 0)
 
   useEffect(() => {
     const el = ref.current
@@ -68,6 +97,11 @@ export function PoolCard() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  function shortenAddress(addr: string) {
+    return `${addr.slice(0, 6)}...${addr.slice(-4)}`
+  }
+
+
   return (
     <div
       ref={ref}
@@ -78,21 +112,22 @@ export function PoolCard() {
 
       {/* Pool Title */}
       <div className="border-b border-[#2a2a34] px-6 py-5 md:px-8">
-        <div className="flex items-center gap-3">
-          <div className="flex -space-x-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-[#1a1a24] bg-[#627eea] text-xs font-bold text-white">
-              ETH
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-accent">
+              <span className="text-sm font-bold text-primary-foreground">H</span>
             </div>
-            <div className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-[#1a1a24] bg-[#2775ca] text-xs font-bold text-white">
-              USD
+            <div>
+              <h2 className="text-xl font-bold text-foreground">
+                HookamarktHook
+              </h2>
+              <p className="text-sm text-muted-foreground">Uniswap v4 Hook — Sepolia</p>
             </div>
           </div>
-          <div>
-            <h2 className="text-xl font-bold text-foreground">
-              ETH / USDC Pool
-            </h2>
-            <p className="text-sm text-muted-foreground">Uniswap v4</p>
-          </div>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            Deployed
+          </span>
         </div>
       </div>
 
@@ -124,10 +159,96 @@ export function PoolCard() {
               className="inline-flex items-center gap-1.5 rounded-md border border-[#2a2a34] bg-secondary/60 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
             >
               <ExternalLink className="h-3 w-3" />
-              View on Etherscan
+              Etherscan
             </a>
           </div>
         </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Address ends in <code className="text-violet-400">0xC0</code> — flag bits for <span className="text-foreground">beforeSwap</span> + <span className="text-foreground">afterSwap</span>
+        </p>
+      </div>
+
+      {/* On-chain Config */}
+      <div className="border-b border-[#2a2a34] px-6 py-5 md:px-8">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Contract Configuration
+        </p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="rounded-lg bg-[#12121a] px-4 py-3">
+            <p className="text-xs text-muted-foreground">Pool Manager</p>
+            <a
+              href={`https://sepolia.etherscan.io/address/${poolManager || ""}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 block text-sm font-mono text-foreground hover:text-primary transition-colors"
+            >
+              {poolManager ? shortenAddress(poolManager as string) : "Loading..."}
+            </a>
+          </div>
+          <div className="rounded-lg bg-[#12121a] px-4 py-3">
+            <p className="text-xs text-muted-foreground">Chainlink Price Feed</p>
+            <a
+              href={`https://sepolia.etherscan.io/address/${priceFeed || ""}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 block text-sm font-mono text-foreground hover:text-primary transition-colors"
+            >
+              {priceFeed ? shortenAddress(priceFeed as string) : "Loading..."}
+            </a>
+          </div>
+          <div className="rounded-lg bg-[#12121a] px-4 py-3">
+            <p className="text-xs text-muted-foreground">Reputation Registry</p>
+            <a
+              href={`https://sepolia.etherscan.io/address/${reputationReg || ""}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 block text-sm font-mono text-foreground hover:text-primary transition-colors"
+            >
+              {reputationReg ? shortenAddress(reputationReg as string) : "Loading..."}
+            </a>
+          </div>
+          <div className="rounded-lg bg-[#12121a] px-4 py-3">
+            <p className="text-xs text-muted-foreground">Min Reputation Score</p>
+            <p className="mt-1 text-sm font-semibold text-foreground">
+              {minRepScore !== undefined ? `${minRepScore}/5` : "Loading..."}
+            </p>
+          </div>
+        </div>
+      </div>
+
+
+      {/* Aggregate Stats */}
+      <div className="border-b border-[#2a2a34] px-6 py-5 md:px-8">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Aggregate Stats
+        </p>
+        {isLoadingStats ? (
+          <div className="flex items-center gap-2 py-3">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Loading from Sepolia...</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-lg bg-[#12121a] px-4 py-3 text-center">
+              <p className="text-xs text-muted-foreground">Total Swaps</p>
+              <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                {totalSwapsAll}
+              </p>
+            </div>
+            <div className="rounded-lg bg-[#12121a] px-4 py-3 text-center">
+              <p className="text-xs text-muted-foreground">Successful</p>
+              <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-400">
+                {totalSuccess}
+              </p>
+            </div>
+            <div className="rounded-lg bg-[#12121a] px-4 py-3 text-center">
+              <p className="text-xs text-muted-foreground">Active Agents</p>
+              <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                3
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Compatible Agents */}
@@ -139,8 +260,11 @@ export function PoolCard() {
           {compatibleAgents.map((agent) => {
             const Icon = agent.icon
             return (
-              <div
+              <a
                 key={agent.id}
+                href={`https://sepolia.etherscan.io/nft/${IDENTITY_REGISTRY}/${agent.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="flex items-center gap-3 rounded-lg border border-[#2a2a34] bg-[#12121a] px-4 py-3 transition-colors hover:border-[#3a3a44]"
               >
                 <div
@@ -155,43 +279,16 @@ export function PoolCard() {
                   <span className="mx-1.5 text-muted-foreground/40">-</span>
                   <span className="text-sm text-foreground">{agent.name}</span>
                 </div>
-              </div>
+                <span className="text-xs text-muted-foreground">
+                  {agent.reputation}/5 ★
+                </span>
+                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/50" />
+              </a>
             )
           })}
         </div>
       </div>
 
-      {/* Pool Stats */}
-      <div className="border-b border-[#2a2a34] px-6 py-5 md:px-8">
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Pool Stats
-        </p>
-        <div className="grid grid-cols-2 gap-4">
-          {poolStats.map((stat) => (
-            <div
-              key={stat.label}
-              className="rounded-lg bg-[#12121a] px-4 py-3"
-            >
-              <p className="text-xs text-muted-foreground">{stat.label}</p>
-              <p className="mt-1 text-lg font-bold tabular-nums text-foreground">
-                {stat.value}
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Actions */}
-      <div className="flex flex-col gap-3 px-6 py-5 md:px-8">
-        <button className="group flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-sm font-semibold text-primary-foreground transition-all hover:shadow-lg hover:shadow-primary/25">
-          Trade in Pool
-          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-        </button>
-        <button className="flex w-full items-center justify-center gap-2 rounded-lg border border-[#2a2a34] bg-transparent px-6 py-3 text-sm font-semibold text-foreground transition-colors hover:border-muted-foreground hover:bg-secondary">
-          <Plus className="h-4 w-4" />
-          Add Liquidity
-        </button>
-      </div>
     </div>
   )
 }

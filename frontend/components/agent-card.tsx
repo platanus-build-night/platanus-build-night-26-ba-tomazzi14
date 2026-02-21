@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { ArrowRight, Shield, Eye, Clock, Star, Loader2 } from "lucide-react"
+import { ArrowRight, Shield, Eye, Clock, Star, Loader2, ExternalLink } from "lucide-react"
 import { useAgentStats } from "@/hooks/use-agent-stats"
 
 interface AgentConfig {
@@ -191,26 +191,34 @@ function AgentCardItem({ agent, index }: { agent: AgentConfig; index: number }) 
         )}
       </div>
 
-      {/* On-chain badge */}
-      <div className="mb-4">
+      {/* On-chain badges */}
+      <div className="mb-4 flex flex-wrap gap-2">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-semibold text-emerald-400">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
           Live on Sepolia
         </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-500/20 bg-violet-500/10 px-2.5 py-1 text-[10px] font-semibold text-violet-400">
+          ERC-8004
+        </span>
+      </div>
+
+      {/* Explorer Link */}
+      <div className="mb-4">
+        <a
+          href={`https://sepolia.etherscan.io/nft/0x7177a6867296406881E20d6647232314736Dd09A/${agent.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 rounded-md border border-[#2a2a34] bg-[#12121a] px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+        >
+          <ExternalLink className="h-3 w-3 shrink-0" />
+          <span>View Agent NFT #{agent.id} on Etherscan</span>
+        </a>
       </div>
 
       {/* Actions */}
       <div className="flex items-center gap-3">
-        <a
-          href={`https://sepolia.etherscan.io/address/0xBc01DAF0b890ED562Dc325C9ee9429146eEB80C0`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-1 rounded-lg border border-[#2a2a34] bg-transparent px-4 py-2.5 text-sm font-semibold text-foreground text-center transition-colors hover:border-muted-foreground hover:bg-secondary"
-        >
-          View on Etherscan
-        </a>
         <button
-          className={`group/btn flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all ${
+          className={`group/btn flex w-full items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all ${
             agent.icon === "shield"
               ? "bg-violet-600 hover:bg-violet-500"
               : agent.icon === "eye"
