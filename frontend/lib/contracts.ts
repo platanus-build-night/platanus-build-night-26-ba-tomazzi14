@@ -10,6 +10,11 @@ export const WETH_ADDRESS = "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14" as cons
 
 // Pool ID (USDC/WETH with HookamarktHook)
 export const POOL_ID = "0x115103425bcd51a9c5bce5c27ffcd0c191fc91c8473956959000ba602865d8e4" as const
+export const SWAP_ROUTER = "0x65c9c1BF4e96f72302361aF3a8Bd87C238498BFb" as const
+
+// Block where the hook was deployed (for event filtering)
+// Note: thirdweb RPC limits getLogs to 10k block range, so we use a recent block
+export const HOOK_DEPLOY_BLOCK = 10300000n
 
 export const HOOKAMARKT_ABI = [
   {

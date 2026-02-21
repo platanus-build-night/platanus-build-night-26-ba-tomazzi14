@@ -1,5 +1,6 @@
 import { DashboardHeader } from "@/components/dashboard-header"
 import { AgentCards } from "@/components/agent-card"
+import { ActivityFeed } from "@/components/activity-feed"
 
 export default function DashboardPage() {
   return (
@@ -19,6 +20,19 @@ export default function DashboardPage() {
 
         {/* Agent grid */}
         <AgentCards />
+
+        {/* Swap Activity */}
+        <div className="mt-16">
+          <div className="mb-8 text-center">
+            <h2 className="text-2xl font-bold tracking-tight text-foreground">
+              Recent Swap Activity
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Live on-chain events from the Hookamarkt hook
+            </p>
+          </div>
+          <ActivityFeed />
+        </div>
       </main>
     </div>
   )
