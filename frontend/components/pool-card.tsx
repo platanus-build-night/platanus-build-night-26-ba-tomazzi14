@@ -118,7 +118,7 @@ export function PoolCard() {
               {copied ? "Copied" : "Copy"}
             </button>
             <a
-              href={`https://etherscan.io/address/${HOOK_ADDRESS}`}
+              href={`https://sepolia.etherscan.io/address/${HOOK_ADDRESS}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 rounded-md border border-[#2a2a34] bg-secondary/60 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"

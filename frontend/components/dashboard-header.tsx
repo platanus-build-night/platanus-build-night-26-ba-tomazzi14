@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Wallet } from "lucide-react"
+import { ConnectButton } from "@rainbow-me/rainbowkit"
 
 const tabs = [
   { name: "Agents", href: "/dashboard" },
@@ -42,16 +42,6 @@ export function DashboardHeader({ activeTab = "Agents" }: { activeTab?: string }
         <nav className="hidden items-center gap-1 sm:flex">
           {tabs.map((tab) => {
             const isActive = tab.name === activeTab
-            if (tab.disabled) {
-              return (
-                <span
-                  key={tab.name}
-                  className="relative cursor-not-allowed px-4 py-2 text-sm font-medium text-muted-foreground/50"
-                >
-                  {tab.name}
-                </span>
-              )
-            }
             return (
               <Link
                 key={tab.name}
@@ -71,12 +61,71 @@ export function DashboardHeader({ activeTab = "Agents" }: { activeTab?: string }
           })}
         </nav>
 
-        {/* Connect Wallet */}
-        <button className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary/60 px-5 py-2.5 text-sm font-semibold text-foreground backdrop-blur-sm transition-all hover:border-primary/40 hover:bg-secondary">
-          <Wallet className="h-4 w-4 text-primary" />
-          <span className="hidden sm:inline">Connect Wallet</span>
-          <span className="sm:hidden">Connect</span>
-        </button>
+        {/* Connect Wallet - RainbowKit */}
+        <ConnectButton.Custom>
+          {({
+            account,
+            chain,
+            openAccountModal,
+            openChainModal,
+            openConnectModal,
+            mounted,
+          }) => {
+            const ready = mounted
+            const connected = ready && account && chain
+
+            return (
+              <div
+                {...(!ready && {
+                  "aria-hidden": true,
+                  style: {
+                    opacity: 0,
+                    pointerEvents: "none",
+                    userSelect: "none",
+                  },
+                })}
+              >
+                {(() => {
+                  if (!connected) {
+                    return (
+                      <button
+                        onClick={openConnectModal}
+                        className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary/60 px-5 py-2.5 text-sm font-semibold text-foreground backdrop-blur-sm transition-all hover:border-primary/40 hover:bg-secondary"
+                      >
+                        <span className="hidden sm:inline">Connect Wallet</span>
+                        <span className="sm:hidden">Connect</span>
+                      </button>
+                    )
+                  }
+
+                  if (chain.unsupported) {
+                    return (
+                      <button
+                        onClick={openChainModal}
+                        className="inline-flex items-center gap-2 rounded-full border border-destructive/40 bg-destructive/10 px-5 py-2.5 text-sm font-semibold text-destructive transition-all hover:bg-destructive/20"
+                      >
+                        Wrong Network
+                      </button>
+                    )
+                  }
+
+                  return (
+                    <button
+                      onClick={openAccountModal}
+                      className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary/60 px-4 py-2.5 text-sm font-semibold text-foreground backdrop-blur-sm transition-all hover:border-primary/40 hover:bg-secondary"
+                    >
+                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                      <span className="hidden sm:inline">{account.displayName}</span>
+                      <span className="sm:hidden">
+                        {account.displayName.slice(0, 6)}...
+                      </span>
+                    </button>
+                  )
+                })()}
+              </div>
+            )
+          }}
+        </ConnectButton.Custom>
       </div>
     </header>
   )

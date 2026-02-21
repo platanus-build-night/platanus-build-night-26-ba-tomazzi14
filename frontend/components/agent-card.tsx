@@ -1,16 +1,15 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { ArrowRight, Shield, Eye, Clock, Star } from "lucide-react"
+import { ArrowRight, Shield, Eye, Clock, Star, Loader2 } from "lucide-react"
+import { useAgentStats } from "@/hooks/use-agent-stats"
 
-interface Agent {
+interface AgentConfig {
   id: number
   name: string
   icon: "shield" | "eye" | "clock"
   strategy: string
   strategyDesc: string
-  totalSwaps: number
-  successRate: number
   reputation: number
   accentColor: string
   accentBg: string
@@ -18,16 +17,14 @@ interface Agent {
   accentGlow: string
 }
 
-const agents: Agent[] = [
+const agents: AgentConfig[] = [
   {
     id: 197,
     name: "Slippage Guardian",
     icon: "shield",
     strategy: "Risk Minimizer",
     strategyDesc: "Rejects swaps >1 ETH",
-    totalSwaps: 127,
-    successRate: 98.4,
-    reputation: 4.8,
+    reputation: 5.0,
     accentColor: "text-violet-400",
     accentBg: "bg-violet-500/10",
     accentBorder: "border-violet-500/20",
@@ -39,9 +36,7 @@ const agents: Agent[] = [
     icon: "eye",
     strategy: "MEV Protector",
     strategyDesc: "Validates vs Chainlink oracle",
-    totalSwaps: 94,
-    successRate: 96.8,
-    reputation: 4.6,
+    reputation: 5.0,
     accentColor: "text-cyan-400",
     accentBg: "bg-cyan-500/10",
     accentBorder: "border-cyan-500/20",
@@ -52,10 +47,8 @@ const agents: Agent[] = [
     name: "Time Optimizer",
     icon: "clock",
     strategy: "Dynamic Limits",
-    strategyDesc: "Adjusts based on volatility",
-    totalSwaps: 82,
-    successRate: 95.1,
-    reputation: 4.5,
+    strategyDesc: "Adjusts based on volatility hours",
+    reputation: 4.0,
     accentColor: "text-emerald-400",
     accentBg: "bg-emerald-500/10",
     accentBorder: "border-emerald-500/20",
@@ -100,8 +93,9 @@ export function AgentCards() {
   )
 }
 
-function AgentCardItem({ agent, index }: { agent: Agent; index: number }) {
+function AgentCardItem({ agent, index }: { agent: AgentConfig; index: number }) {
   const ref = useRef<HTMLDivElement>(null)
+  const { stats, isLoading } = useAgentStats(agent.id)
 
   useEffect(() => {
     const el = ref.current
@@ -114,6 +108,9 @@ function AgentCardItem({ agent, index }: { agent: Agent; index: number }) {
   }, [index])
 
   const Icon = iconMap[agent.icon]
+
+  const totalSwaps = stats?.totalSwaps ?? 0
+  const successRate = stats?.successRate ?? 0
 
   return (
     <div
@@ -157,41 +154,61 @@ function AgentCardItem({ agent, index }: { agent: Agent; index: number }) {
         </p>
       </div>
 
-      {/* Performance */}
+      {/* Performance - On-chain data */}
       <div className="mb-6 flex-1">
         <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Performance
+          On-chain Performance
         </p>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Total Swaps</span>
-            <span className="font-semibold text-foreground tabular-nums">
-              {agent.totalSwaps}
-            </span>
+        {isLoading ? (
+          <div className="flex items-center gap-2 py-4">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Loading from Sepolia...</span>
           </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Success Rate</span>
-            <span className="font-semibold text-foreground tabular-nums">
-              {agent.successRate}%
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Reputation</span>
-            <span className="inline-flex items-center gap-1.5">
-              <RatingStars rating={agent.reputation} />
-              <span className="font-semibold text-foreground tabular-nums text-xs">
-                {agent.reputation}/5
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Total Swaps</span>
+              <span className="font-semibold text-foreground tabular-nums">
+                {totalSwaps}
               </span>
-            </span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Success Rate</span>
+              <span className="font-semibold text-foreground tabular-nums">
+                {totalSwaps > 0 ? `${successRate}%` : "N/A"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Reputation</span>
+              <span className="inline-flex items-center gap-1.5">
+                <RatingStars rating={agent.reputation} />
+                <span className="font-semibold text-foreground tabular-nums text-xs">
+                  {agent.reputation}/5
+                </span>
+              </span>
+            </div>
           </div>
-        </div>
+        )}
+      </div>
+
+      {/* On-chain badge */}
+      <div className="mb-4">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-semibold text-emerald-400">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          Live on Sepolia
+        </span>
       </div>
 
       {/* Actions */}
       <div className="flex items-center gap-3">
-        <button className="flex-1 rounded-lg border border-[#2a2a34] bg-transparent px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:border-muted-foreground hover:bg-secondary">
-          View Details
-        </button>
+        <a
+          href={`https://sepolia.etherscan.io/address/0xBc01DAF0b890ED562Dc325C9ee9429146eEB80C0`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex-1 rounded-lg border border-[#2a2a34] bg-transparent px-4 py-2.5 text-sm font-semibold text-foreground text-center transition-colors hover:border-muted-foreground hover:bg-secondary"
+        >
+          View on Etherscan
+        </a>
         <button
           className={`group/btn flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all ${
             agent.icon === "shield"
